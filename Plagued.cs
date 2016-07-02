@@ -15,8 +15,8 @@ namespace Oxide.Plugins
     class Plagued : RustPlugin
     {
         private static int plagueRange = 20;
-        private static int plagueIncreaseRate = 1000;
-        private static int plagueDecreaseRate = 1000;
+        private static int plagueIncreaseRate = 10;
+        private static int plagueDecreaseRate = 1;
         private static int plagueMinAffinity = 10;
         private static int affinityIncRate = 10;
         private static int affinityDecRate = 1;
