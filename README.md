@@ -15,6 +15,8 @@ In the end, this is really just an experiment to see if rust can benefit from dy
 ##Workings
 When you get close to a player, you start building up affinity. When you are far away from that player you start loosing affinity, but much slower. This is so you can still collaborate with other players without any penalty. After several minutes of proximity either continuous or briefly interrupted, you become associated with the player with which you have been playing. At that point, you start gaining plague levels. The higher the plague levels, the higher the effects and it takes ten times longer to heal that to get sick. Also, the rapidity of the onset and severity of the symptoms depend on the amount of associates that you have.
 
+The mod has a configurable option for a mini team system named the "kin" system. Basically, you can set a small number of players as "kin". These players will not trigger the plague, no matter how long you stay ayound them. This system can be disabled for lonewolf servers.
+
 It still has to be fine tuned, but the idea is you can still interact with your neighbors, or group up for a multi-crew raid, but you can't live in close proximity. At default levels it takes eight continuous minutes to become associated and fifteen continuous minutes to reach the maximum plague effects. Inversely, it takes 80 minutes to reach zero affinity and 150 minutes to lose all plague effects.
 
 ##Plague levels
