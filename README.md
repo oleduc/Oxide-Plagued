@@ -13,16 +13,16 @@ When you get close to a player, you start building up affinity. When you are far
 It still has to be fine tuned, but the idea is you can still interact with your neighbors, or group up for a multi-crew raid, but you can't live in close proximity. At default levels it takes eight continuous minutes to become associated and fifteen continuous minutes to reach the maximum plague effects. Inversely, it takes 80 minutes to reach zero affinity and 150 minutes to lose all plague effects.
 
 ##Plague levels
-1 - Decreased Health Regen
-2 - Increased hunger
-3 - Increased thirst
-4 - No Health Regen
-5 - No comfort
-6 - Highly Increased Hunger
-7 - Highly Increased Thirst
-8 - Cold temperature
-9 - Bleeding
-10 - Poison effect
+- 1 Decreased Health Regen
+- 2 Increased hunger
+- 3 Increased thirst
+- 4 No Health Regen
+- 5 No comfort
+- 6 Highly Increased Hunger
+- 7 Highly Increased Thirst
+- 8 Cold temperature
+- 9 Bleeding
+- 10 Poison effect
 
 ##Features
 - Automatic associates detection and penalty attributions.
