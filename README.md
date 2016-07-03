@@ -42,6 +42,7 @@ It still has to be fine tuned, but the idea is you can still interact with your 
 ##Planned features
 - Database persistence
 - Configuration files
+- Collaboration analytics
 
 ##Test server
 Address: plagued.clanservers.com
