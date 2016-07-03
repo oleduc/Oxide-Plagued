@@ -48,7 +48,7 @@ Address: plagued.clanservers.com
 
 Port: 28016
 
-Beta
+##Beta
 This plugin is still in beta, it is to be expected that players will find ways to avoid the penalties. Also the performance is still very much sub-optimal as I'm just a puny web developer.
 
 Credits
