@@ -15,12 +15,13 @@ namespace Oxide.Plugins
     class Plagued : RustPlugin
     {
         private static int plagueRange = 20;
-        private static int plagueIncreaseRate = 10;
+        private static int plagueIncreaseRate = 5;
         private static int plagueDecreaseRate = 1;
         private static int plagueMinAffinity = 100;
         private static int affinityIncRate = 10;
         private static int affinityDecRate = 1;
         private static int maxKin = 2;
+        private static int maxKinChanges = 3;
         private static int playerLayer;
 
         private readonly FieldInfo serverinput = typeof(BasePlayer).GetField("serverInput", (BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic));
@@ -314,6 +315,7 @@ namespace Oxide.Plugins
             if (getPlayerLookedAt(player, out targetPlayer))
             {
                 PlayerState state = playerStates[player.userID];
+                PlayerState targetPlayerState = playerStates[targetPlayer.userID];
 
                 if (!state.isKin(targetPlayer.userID))
                 {
@@ -322,14 +324,15 @@ namespace Oxide.Plugins
                     return false;
                 }
 
-                if (state.addKin(targetPlayer.userID))
+                if (state.removeKin(targetPlayer.userID) && targetPlayerState.forceRemoveKin(player.userID))
                 {
-                    SendReply(player, targetPlayer.displayName + " was added to kin!");
-                    SendReply(targetPlayer, player.displayName + " has added you to kin!");
+                    SendReply(player, targetPlayer.displayName + " was removed from you kin list!");
+                    SendReply(targetPlayer, player.displayName + " was removed from you kin list!");
+
                     return true;
                 }
 
-                SendReply(player, targetPlayer.displayName + " could not be added to kin!");
+                SendReply(player, targetPlayer.displayName + " could not be removed from kin list (Exceeded max kin changes per restart)!");
             }
 
             return false;
@@ -337,16 +340,37 @@ namespace Oxide.Plugins
 
         private bool cmdDelKin(BasePlayer player, int position)
         {
+            SendReply(player, "Deleting kin by name is not yet supported.");
             return false;
         }
 
-        private bool cmdListKin(BasePlayer player)
+        private void cmdListKin(BasePlayer player)
         {
-            return false;
+            List<string> kinList = playerStates[player.userID].getKinList();
+
+            if (kinList.Count == 0)
+            {
+                SendReply(player, "You have no kin.");
+                return;
+            }
+
+            string answerMsg = "Kin list: \n ";
+
+            foreach(string kinName in kinList)
+            {
+                answerMsg += " > " + kinName + "\n";
+            }
+
+            SendReply(player, answerMsg);
         }
 
         private bool cmdInfo(BasePlayer player)
         {
+            SendReply(player, " ===== Plagued mod ======");
+            SendReply(player, "An unknown airborne pathogen has decimated most of the population. You find yourself on a deserted island, lucky to be among the few survivors. But the biological apocalypse is far from being over. It seems that the virus starts to express itself when certain hormonal changes are triggered by highly social behaviors. It has been noted that small groups of survivor seems to be relatively unaffected, but there isn't one single town or clan that wasn't decimated.");
+            SendReply(player, "Workings: \n The longuer you hang around others, the sicker you'll get. However, your kin are unaffected, add your friends as kin and you will be able to collaborate. Choose your kin wisely, there are no big families in this world.");
+            SendReply(player, "Settings: \n > Max kin : " + maxKin.ToString() + "\n" + " > Max kin changes / Restart : " + maxKinChanges.ToString());
+
             return false;
         }
 
@@ -431,6 +455,7 @@ namespace Oxide.Plugins
             private Dictionary<ulong, int> associates;
             private List<ulong> kins;
             private List<ulong> kinRequests;
+            private int kinChangesCount;
             private bool pristine;
 
             /**
@@ -443,6 +468,7 @@ namespace Oxide.Plugins
                 associates = new Dictionary<ulong, int>();
                 kins = new List<ulong>();
                 kinRequests = new List<ulong>();
+                kinChangesCount = 0;
                 pristine = true;
             }
 
@@ -496,7 +522,7 @@ namespace Oxide.Plugins
                     decreasePlagueLevel();
                 }
 
-                Interface.Oxide.LogInfo(player.displayName + " -> " + plagueLevel);
+                //Interface.Oxide.LogInfo(player.displayName + " -> " + plagueLevel);
             }
 
             /**
@@ -583,6 +609,44 @@ namespace Oxide.Plugins
                 }
 
                 return false;
+            }
+
+            public bool removeKin(ulong kinID)
+            {
+                if (kins.Contains(kinID) && (kinChangesCount + 1) <= maxKinChanges)
+                {
+                    kinChangesCount++;
+                    kins.Remove(kinID);
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            public bool forceRemoveKin(ulong kinID)
+            {
+                if (kins.Contains(kinID))
+                {
+                    kinChangesCount++;
+                    kins.Remove(kinID);
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            public List<string> getKinList()
+            {
+                List<string> kinList = new List<string>();
+
+                foreach (ulong kinID in kins)
+                {
+                    kinList.Add(kinID.ToString());
+                }
+
+                return kinList;
             }
 
             public int getPlagueLevel()
