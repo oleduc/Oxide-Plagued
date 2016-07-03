@@ -1,4 +1,9 @@
 # Oxide-Plagued
+
+<p align="center">
+  <img src="https://i.imgur.com/3JcqsKO.png?1"/>
+</p>
+
 ##Plagued - Everyone is infected (Beta)
 An unknown airborne pathogen has decimated most of the population. You find yourself on a deserted island, lucky to be among the few survivors. But the biological apocalypse is far from being over. It seems that the virus starts to express itself when certain hormonal changes are triggered by highly social behaviors. It has been noted that small groups of survivor seems to be relatively unaffected, but there isn't one single town or clan that wasn't decimated.
 
