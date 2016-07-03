@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Plagued", "Wernesgruner", 0.1)]
+    [Info("Plagued", "Wernesgruner", 0.2)]
     [Description("Everyone is infected.")]
 
     class Plagued : RustPlugin
@@ -17,10 +17,13 @@ namespace Oxide.Plugins
         private static int plagueRange = 20;
         private static int plagueIncreaseRate = 10;
         private static int plagueDecreaseRate = 1;
-        private static int plagueMinAffinity = 10;
+        private static int plagueMinAffinity = 100;
         private static int affinityIncRate = 10;
         private static int affinityDecRate = 1;
+        private static int maxKin = 2;
         private static int playerLayer;
+
+        private readonly FieldInfo serverinput = typeof(BasePlayer).GetField("serverInput", (BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic));
 
         // Get the buffer size from the Vis class using relfection. It should always be 8ko, but it might change in the future
         private static readonly Collider[] colBuffer = (Collider[])typeof(Vis).GetField("colBuffer", (BindingFlags.Static | BindingFlags.NonPublic)).GetValue(null);
@@ -51,6 +54,7 @@ namespace Oxide.Plugins
             {
                 // The player was loaded in the current game session
                 playerStates.Add(player.userID, new PlayerState(player));
+                SendReply(player, "Welcome to plagued mod. Try the <color=#81F781>/plagued</color> command for more information.");
                 Puts(player.displayName + " has been plagued!");
             } else
             {
@@ -215,6 +219,200 @@ namespace Oxide.Plugins
             }
         }
 
+        [ChatCommand("plagued")]
+        void cmdPlagued(BasePlayer player, string command, string[] args)
+        {
+            if (args.Length == 0)
+            {
+                SendReply(player, "<color=#81F781>/plagued addkin</color> => <color=#D8D8D8> Add the player you are looking at to your kin list.</color>");
+                SendReply(player, "<color=#81F781>/plagued delkin</color> => <color=#D8D8D8> Remove the player you are looking at from your kin list.</color>");
+                SendReply(player, "<color=#81F781>/plagued delkin</color> <color=#F2F5A9> number </color> => <color=#D8D8D8> Remove a player from your kin list by kin number.</color>");
+                SendReply(player, "<color=#81F781>/plagued lskin</color> => <color=#D8D8D8> Display your kin list.</color>");
+                SendReply(player, "<color=#81F781>/plagued info</color> => <color=#D8D8D8> Display information about the workings of this mod.</color>");
+
+                return;
+            }
+
+            if (args.Length >= 1)
+            {
+                switch (args[0])
+                {
+                    case "addkin":
+                        cmdAddKin(player);
+                        break;
+                    case "delkin":
+                        if (args.Length == 2)
+                        {
+                            int position;
+                            if (int.TryParse(args[1], out position))
+                            {
+                                cmdDelKin(player, position);
+                            }
+                            else
+                            {
+                                SendReply(player, "Kin position must be a valid number!");
+                            }
+                        } else
+                        {
+                            cmdDelKin(player);
+                        }
+                        break;
+                    case "lskin":
+                        cmdListKin(player);
+                        break;
+                    case "info":
+                        cmdInfo(player);
+                        break;
+                    default:
+                        SendReply(player, "Invalid Plagued mod command.");
+                        break;
+                }
+            }
+        }
+
+        private void cmdAddKin(BasePlayer player)
+        {
+            BasePlayer targetPlayer;
+
+            if (getPlayerLookedAt(player, out targetPlayer))
+            {
+                PlayerState state = playerStates[player.userID];
+                PlayerState targetPlayerState = playerStates[targetPlayer.userID];
+
+                if (state.isKin(targetPlayer.userID))
+                {
+                    SendReply(player, targetPlayer.displayName + " is already your kin!");
+                    return;
+                }
+
+                if (state.hasKinRequest(targetPlayer.userID))
+                {
+                    state.addKin(targetPlayer.userID);
+                    targetPlayerState.addKin(player.userID);
+                    SendReply(player, "You are now kin with " + targetPlayer.displayName + "!");
+                    SendReply(targetPlayer, "You are now kin with " + player.displayName + "!");
+
+                    return;
+                } else
+                {
+                    targetPlayerState.addKinRequest(player.userID);
+                    SendReply(player, "You have requested to be " + targetPlayer.displayName + "'s kin!");
+                    SendReply(targetPlayer, player.displayName + " has requested to be your kin. Add him back to become kin!");
+
+                    return;
+                }
+
+                SendReply(player, targetPlayer.displayName + " could not be added to kin!");
+            }
+
+        }
+
+        private bool cmdDelKin(BasePlayer player)
+        {
+            BasePlayer targetPlayer;
+
+            if (getPlayerLookedAt(player, out targetPlayer))
+            {
+                PlayerState state = playerStates[player.userID];
+
+                if (!state.isKin(targetPlayer.userID))
+                {
+                    SendReply(player, targetPlayer.displayName + " not your kin!");
+
+                    return false;
+                }
+
+                if (state.addKin(targetPlayer.userID))
+                {
+                    SendReply(player, targetPlayer.displayName + " was added to kin!");
+                    SendReply(targetPlayer, player.displayName + " has added you to kin!");
+                    return true;
+                }
+
+                SendReply(player, targetPlayer.displayName + " could not be added to kin!");
+            }
+
+            return false;
+        }
+
+        private bool cmdDelKin(BasePlayer player, int position)
+        {
+            return false;
+        }
+
+        private bool cmdListKin(BasePlayer player)
+        {
+            return false;
+        }
+
+        private bool cmdInfo(BasePlayer player)
+        {
+            return false;
+        }
+
+        public static void MsgPlayer(BasePlayer player, string format, params object[] args)
+        {
+            if (player?.net != null) player.SendConsoleCommand("chat.add", 0, args.Length > 0 ? string.Format(format, args) : format, 1f);
+        }
+
+        private bool getPlayerLookedAt(BasePlayer player, out BasePlayer targetPlayer)
+        {
+            targetPlayer = null;
+
+            Quaternion currentRot;
+            if (!TryGetPlayerView(player, out currentRot))
+            {
+                SendReply(player, "Couldn't get player rotation");
+                return false;
+            }
+
+            object closestEnt;
+            Vector3 closestHitpoint;
+            if (!TryGetClosestRayPoint(player.transform.position, currentRot, out closestEnt, out closestHitpoint)) return false;
+            targetPlayer = ((Collider)closestEnt).GetComponentInParent<BasePlayer>();
+
+            if (targetPlayer == null)
+            {
+                SendReply(player, "You aren't looking at a player");
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryGetClosestRayPoint(Vector3 sourcePos, Quaternion sourceDir, out object closestEnt, out Vector3 closestHitpoint)
+        {
+            Vector3 sourceEye = sourcePos + new Vector3(0f, 1.5f, 0f);
+            Ray ray = new Ray(sourceEye, sourceDir * Vector3.forward);
+
+            var hits = Physics.RaycastAll(ray);
+            float closestdist = 999999f;
+            closestHitpoint = sourcePos;
+            closestEnt = false;
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (hit.collider.GetComponentInParent<TriggerBase>() == null && hit.distance < closestdist)
+                {
+                    closestdist = hit.distance;
+                    closestEnt = hit.collider;
+                    closestHitpoint = hit.point;
+                }
+            }
+
+            if (closestEnt is bool) return false;
+            return true;
+        }
+
+        private bool TryGetPlayerView(BasePlayer player, out Quaternion viewAngle)
+        {
+            viewAngle = new Quaternion(0f, 0f, 0f, 0f);
+            var input = serverinput.GetValue(player) as InputState;
+            if (input?.current == null) return false;
+            viewAngle = Quaternion.Euler(input.current.aimAngles);
+            return true;
+        }
+
         public class CustomMetabolism : PlayerMetabolism
         {
             public BasePlayer getOwner()
@@ -231,7 +429,8 @@ namespace Oxide.Plugins
             private BasePlayer player;
             private int plagueLevel;
             private Dictionary<ulong, int> associates;
-            private Dictionary<ulong, int> kin;
+            private List<ulong> kins;
+            private List<ulong> kinRequests;
             private bool pristine;
 
             /**
@@ -242,6 +441,9 @@ namespace Oxide.Plugins
                 player = newPlayer;
                 plagueLevel = 0;
                 associates = new Dictionary<ulong, int>();
+                kins = new List<ulong>();
+                kinRequests = new List<ulong>();
+                pristine = true;
             }
 
             /**
@@ -276,8 +478,10 @@ namespace Oxide.Plugins
 
                 foreach (BasePlayer associate in associates)
                 {
-                    int affinity = increaseAssociateAffinity(associate);
+                    if (kins.Contains(associate.userID)) continue;
 
+                    int affinity = increaseAssociateAffinity(associate);
+                    
                     if (affinity >= plagueMinAffinity)
                     {
                         contagionVectorsCount++;
@@ -291,6 +495,8 @@ namespace Oxide.Plugins
                 {
                     decreasePlagueLevel();
                 }
+
+                Interface.Oxide.LogInfo(player.displayName + " -> " + plagueLevel);
             }
 
             /**
@@ -317,6 +523,13 @@ namespace Oxide.Plugins
             {
                 if ((plagueLevel + (contagionVectorCount * plagueIncreaseRate)) <= 10000) {
                     plagueLevel += contagionVectorCount * plagueIncreaseRate;
+
+                    if (pristine == true)
+                    {
+                        pristine = false;
+                        MsgPlayer(player, "I don't feel so good.");
+                        //Interface.Oxide.LogInfo(player.displayName + " is now sick.");
+                    }
                 }
 
                 //Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
@@ -327,13 +540,59 @@ namespace Oxide.Plugins
                 if ((plagueLevel - plagueDecreaseRate) >= 0)
                 {
                     plagueLevel -= plagueDecreaseRate;
+
+                    if (plagueLevel == 0)
+                    {
+                        pristine = true;
+                        MsgPlayer(player, "I feel a bit better now.");
+                        //Interface.Oxide.LogInfo(player.displayName + " is now cured.");
+                    }
                     //Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
                 }
+            }
+            
+            public bool isKin(ulong kinID)
+            {
+                return kins.Contains(kinID);
+            }
+
+            public bool hasKinRequest(ulong kinID)
+            {
+                return kinRequests.Contains(kinID);
+            }
+
+            public bool addKinRequest(ulong kinID)
+            {
+                if (!kinRequests.Contains(kinID))
+                {
+                    kinRequests.Add(kinID);
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            public bool addKin(ulong kinID) {
+                if (kins.Count + 1 <= maxKin && !isKin(kinID))
+                {
+                    if (kinRequests.Contains(kinID)) kinRequests.Remove(kinID);
+                    kins.Add(kinID);
+
+                    return true;
+                }
+
+                return false;
             }
 
             public int getPlagueLevel()
             {
                 return plagueLevel;
+            }
+
+            public bool getPristine()
+            {
+                return pristine;
             }
         }
 
