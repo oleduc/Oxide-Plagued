@@ -43,6 +43,8 @@ It still has to be fine tuned, but the idea is you can still interact with your 
 - Database persistence
 - Configuration files
 - Collaboration analytics
+- Sick kin dynamics
+- Anti cheesing balances
 
 ##Test server
 Address: plagued.clanservers.com
