@@ -437,14 +437,6 @@ namespace Oxide.Plugins
             return true;
         }
 
-        public class CustomMetabolism : PlayerMetabolism
-        {
-            public BasePlayer getOwner()
-            {
-                return this.owner;
-            }
-        }
-
         /**
          * This class handles the in-memory state of a player.
          */
