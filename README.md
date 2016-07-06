@@ -38,10 +38,10 @@ It still has to be fine tuned, but the idea is you can still interact with your 
 - Time based progression and recovery
 - Kin system
 - Commands
+- Configuration files
 
 ##Planned features
 - Database persistence
-- Configuration files
 - Collaboration analytics
 - Sick kin dynamics
 - Anti cheesing balances
