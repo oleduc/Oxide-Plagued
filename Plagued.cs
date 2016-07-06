@@ -17,7 +17,7 @@ namespace Oxide.Plugins
         private static int plagueRange = 20;
         private static int plagueIncreaseRate = 5;
         private static int plagueDecreaseRate = 1;
-        private static int plagueMinAffinity = 100;
+        private static int plagueMinAffinity = 6000;
         private static int affinityIncRate = 10;
         private static int affinityDecRate = 1;
         private static int maxKin = 2;
@@ -32,6 +32,22 @@ namespace Oxide.Plugins
         //
         private Dictionary<ulong, PlayerState> playerStates;
 
+        protected override void LoadDefaultConfig()
+        {
+            PrintWarning("Creating a new configuration file (Plagued Mod)");
+            Config.Clear();
+            Config["plagueRange"] = 20;
+            Config["plagueIncreaseRate"] = 5;
+            Config["plagueDecreaseRate"] = 1;
+            Config["plagueMinAffinity"] = 6000;
+            Config["affinityIncRate"] = 10;
+            Config["affinityDecRate"] = 1;
+            Config["maxKin"] = 2;
+            Config["maxKinChanges"] = 3;
+
+            SaveConfig();
+        }
+
         void OnServerInitialized()
         {
             // Set the layer that will be used in the radius search. We only want human players in this case
@@ -43,6 +59,15 @@ namespace Oxide.Plugins
             {
                 playerStates.Add(player.userID, new PlayerState(player));
             }
+            
+            plagueRange = (int) Config["plagueRange"];
+            plagueIncreaseRate = (int) Config["plagueIncreaseRate"];
+            plagueDecreaseRate = (int) Config["plagueDecreaseRate"];
+            plagueMinAffinity = (int) Config["plagueMinAffinity"];
+            affinityIncRate = (int) Config["affinityIncRate"];
+            affinityDecRate = (int) Config["affinityDecRate"];
+            maxKin = (int) Config["maxKin"];
+            maxKinChanges = (int) Config["maxKinChanges"];
         }
 
         void OnPlayerInit(BasePlayer player)
@@ -57,10 +82,6 @@ namespace Oxide.Plugins
                 playerStates.Add(player.userID, new PlayerState(player));
                 SendReply(player, "Welcome to plagued mod. Try the <color=#81F781>/plagued</color> command for more information.");
                 Puts(player.displayName + " has been plagued!");
-            } else
-            {
-                // The player was already loaded in memory
-                Puts(player.displayName + " has returned!");
             }
         }
 
@@ -68,7 +89,7 @@ namespace Oxide.Plugins
         {
             ProximityDetector proximityDetector = player.gameObject.GetComponent<ProximityDetector>();
             proximityDetector.disableProximityCheck();
-            Puts(player.displayName + " is no longer watched!");
+            // Puts(player.displayName + " is no longer watched!");
         }
 
         void OnRunPlayerMetabolism(PlayerMetabolism metabolism)
@@ -202,9 +223,6 @@ namespace Oxide.Plugins
             {
                 playerStates[player.userID].increasePlaguePenalty(players);
                 //Puts(player.displayName + " is close to " + (players.Length - 1).ToString() + " other players!");
-            } else
-            {
-                Puts(player.displayName + " has no state!");
             }
         }
 
@@ -213,10 +231,6 @@ namespace Oxide.Plugins
             if (playerStates.ContainsKey(player.userID))
             {
                 playerStates[player.userID].decreasePlaguePenalty();
-            }
-            else
-            {
-                Puts(player.displayName + " has no state!");
             }
         }
 
@@ -368,7 +382,7 @@ namespace Oxide.Plugins
         {
             SendReply(player, " ===== Plagued mod ======");
             SendReply(player, "An unknown airborne pathogen has decimated most of the population. You find yourself on a deserted island, lucky to be among the few survivors. But the biological apocalypse is far from being over. It seems that the virus starts to express itself when certain hormonal changes are triggered by highly social behaviors. It has been noted that small groups of survivor seems to be relatively unaffected, but there isn't one single town or clan that wasn't decimated.");
-            SendReply(player, "Workings: \n The longuer you hang around others, the sicker you'll get. However, your kin are unaffected, add your friends as kin and you will be able to collaborate. Choose your kin wisely, there are no big families in this world.");
+            SendReply(player, "Workings: \n The longer you hang around others, the sicker you'll get. However, your kin are unaffected, add your friends as kin and you will be able to collaborate. Choose your kin wisely, there are no big families in this world.");
             SendReply(player, "Settings: \n > Max kin : " + maxKin.ToString() + "\n" + " > Max kin changes / Restart : " + maxKinChanges.ToString());
 
             return false;
@@ -406,6 +420,9 @@ namespace Oxide.Plugins
 
         private bool TryGetClosestRayPoint(Vector3 sourcePos, Quaternion sourceDir, out object closestEnt, out Vector3 closestHitpoint)
         {
+            /**
+             * Credit: Nogrod (HumanNPC)
+             */
             Vector3 sourceEye = sourcePos + new Vector3(0f, 1.5f, 0f);
             Ray ray = new Ray(sourceEye, sourceDir * Vector3.forward);
 
@@ -430,6 +447,9 @@ namespace Oxide.Plugins
 
         private bool TryGetPlayerView(BasePlayer player, out Quaternion viewAngle)
         {
+            /**
+             * Credit: Nogrod (HumanNPC)
+             */
             viewAngle = new Quaternion(0f, 0f, 0f, 0f);
             var input = serverinput.GetValue(player) as InputState;
             if (input?.current == null) return false;
