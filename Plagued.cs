@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Plugins;
+using Oxide.Ext.SQLite;
 
 using UnityEngine;
 
@@ -48,6 +49,11 @@ namespace Oxide.Plugins
             SaveConfig();
         }
 
+        void Unload()
+        {
+            PlayerState.closeDatabase();
+        }
+
         void OnServerInitialized()
         {
             // Set the layer that will be used in the radius search. We only want human players in this case
@@ -68,6 +74,8 @@ namespace Oxide.Plugins
             affinityDecRate = (int) Config["affinityDecRate"];
             maxKin = (int) Config["maxKin"];
             maxKinChanges = (int) Config["maxKinChanges"];
+
+            PlayerState.setupDatabase(this);
         }
 
         void OnPlayerInit(BasePlayer player)
@@ -457,11 +465,21 @@ namespace Oxide.Plugins
             return true;
         }
 
+        public class CustomMetabolism : PlayerMetabolism
+        {
+            public BasePlayer getOwner()
+            {
+                return this.owner;
+            }
+        }
+
         /**
          * This class handles the in-memory state of a player.
          */
         public class PlayerState
         {
+            private static readonly Oxide.Ext.SQLite.Libraries.SQLite sqlite = Interface.GetMod().GetLibrary<Ext.SQLite.Libraries.SQLite>();
+            private static Core.Database.Connection sqlConnection;
             private BasePlayer player;
             private int plagueLevel;
             private Dictionary<ulong, int> associates;
@@ -482,6 +500,55 @@ namespace Oxide.Plugins
                 kinRequests = new List<ulong>();
                 kinChangesCount = 0;
                 pristine = true;
+            }
+
+            public static void setupDatabase(RustPlugin plugin)
+            {
+                sqlConnection = sqlite.OpenDb($"Plagued.db", plugin);
+
+                var sql = new Oxide.Core.Database.Sql();
+
+                sql.Append(@"CREATE TABLE IF NOT EXISTS players (
+                                 id INTEGER PRIMARY KEY   AUTOINCREMENT,
+                                 plague_level INTEGER,
+                                 kinChangesCount INTEGER,
+                                 pristine BOOLEAN
+                               );");
+
+                sql.Append(@"CREATE TABLE IF NOT EXISTS associates (
+                                id INTEGER PRIMARY KEY   AUTOINCREMENT,
+                                player_id integer NOT NULL,
+                                associate_id integer NOT NULL,
+                                level INTEGER,
+                                FOREIGN KEY (player_id) REFERENCES players(id),
+                                FOREIGN KEY (associate_id) REFERENCES players(id)
+                            );");
+
+                sql.Append(@"CREATE TABLE IF NOT EXISTS kin (
+                                id INTEGER PRIMARY KEY   AUTOINCREMENT,
+                                player_id integer NOT NULL,
+                                kin_id integer NOT NULL,
+                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                FOREIGN KEY (player_id) REFERENCES players(id),
+                                FOREIGN KEY (kin_id) REFERENCES players(id)
+                            );");
+
+                sql.Append(@"CREATE TABLE IF NOT EXISTS kin_request (
+                                id INTEGER PRIMARY KEY   AUTOINCREMENT,
+                                requester_id integer NOT NULL,
+                                target_id integer NOT NULL,
+                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                FOREIGN KEY (requester_id) REFERENCES players(id),
+                                FOREIGN KEY (target_id) REFERENCES players(id)
+                            );");
+
+
+                sqlite.Insert(sql, sqlConnection);
+            }
+
+            public static void closeDatabase()
+            {
+                sqlite.CloseDb(sqlConnection);
             }
 
             /**
