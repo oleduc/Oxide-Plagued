@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Collections.Generic;
+using System;
 
 using Oxide.Core;
 using Oxide.Core.Configuration;
@@ -33,6 +34,7 @@ namespace Oxide.Plugins
         //
         private Dictionary<ulong, PlayerState> playerStates;
 
+        #region Hooks
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file (Plagued Mod)");
@@ -56,6 +58,7 @@ namespace Oxide.Plugins
 
         void OnServerInitialized()
         {
+            PlayerState.setupDatabase(this);
             // Set the layer that will be used in the radius search. We only want human players in this case
             playerLayer = LayerMask.GetMask("Player (Server)");
 
@@ -74,8 +77,6 @@ namespace Oxide.Plugins
             affinityDecRate = (int) Config["affinityDecRate"];
             maxKin = (int) Config["maxKin"];
             maxKinChanges = (int) Config["maxKinChanges"];
-
-            PlayerState.setupDatabase(this);
         }
 
         void OnPlayerInit(BasePlayer player)
@@ -241,7 +242,9 @@ namespace Oxide.Plugins
                 playerStates[player.userID].decreasePlaguePenalty();
             }
         }
+        #endregion
 
+        #region Commands
         [ChatCommand("plagued")]
         void cmdPlagued(BasePlayer player, string command, string[] args)
         {
@@ -396,10 +399,17 @@ namespace Oxide.Plugins
             return false;
         }
 
+        #endregion
+
+        #region Helpers
         public static void MsgPlayer(BasePlayer player, string format, params object[] args)
         {
             if (player?.net != null) player.SendConsoleCommand("chat.add", 0, args.Length > 0 ? string.Format(format, args) : format, 1f);
         }
+
+        #endregion
+
+        #region Geometry
 
         private bool getPlayerLookedAt(BasePlayer player, out BasePlayer targetPlayer)
         {
@@ -465,14 +475,9 @@ namespace Oxide.Plugins
             return true;
         }
 
-        public class CustomMetabolism : PlayerMetabolism
-        {
-            public BasePlayer getOwner()
-            {
-                return this.owner;
-            }
-        }
+        #endregion
 
+        #region Data
         /**
          * This class handles the in-memory state of a player.
          */
@@ -481,12 +486,13 @@ namespace Oxide.Plugins
             private static readonly Oxide.Ext.SQLite.Libraries.SQLite sqlite = Interface.GetMod().GetLibrary<Ext.SQLite.Libraries.SQLite>();
             private static Core.Database.Connection sqlConnection;
             private BasePlayer player;
+            private int id;
             private int plagueLevel;
+            private int kinChangesCount;
+            private bool pristine;
             private Dictionary<ulong, int> associates;
             private List<ulong> kins;
             private List<ulong> kinRequests;
-            private int kinChangesCount;
-            private bool pristine;
 
             /**
              * Retrieves a player from database and restore its store or creates a new database entry
@@ -494,12 +500,43 @@ namespace Oxide.Plugins
             public PlayerState(BasePlayer newPlayer)
             {
                 player = newPlayer;
-                plagueLevel = 0;
+
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(@"INSERT OR IGNORE INTO players (user_id, plague_level, kin_changes_count, pristine) VALUES (" + player.userID + ",0,0,1);");
+
+                sqlite.Insert(sql, sqlConnection, create_results =>
+                {
+                    if (create_results == 1) Interface.Oxide.LogInfo("New user created!");
+
+                    sql = new Oxide.Core.Database.Sql();
+                    // Do we really need to worry about SQL injection here?
+                    sql.Append(@"SELECT * FROM players WHERE players.user_id == " + player.userID + ";");
+
+                    sqlite.Query(sql, sqlConnection, results =>
+                    {
+                        if (results == null) return;
+
+                        if (results.Count > 0)
+                        {
+                            foreach (var entry in results)
+                            {
+                                id = Convert.ToInt32(entry["id"]);
+                                plagueLevel = Convert.ToInt32(entry["plague_level"]);
+                                kinChangesCount = Convert.ToInt32(entry["kin_changes_count"]);
+                                pristine = Convert.ToBoolean(entry["pristine"]);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            Interface.Oxide.LogInfo("Something wrong has happened: Could not find the player with the given user_id!");
+                        }
+                    });
+                });
+
                 associates = new Dictionary<ulong, int>();
                 kins = new List<ulong>();
                 kinRequests = new List<ulong>();
-                kinChangesCount = 0;
-                pristine = true;
             }
 
             public static void setupDatabase(RustPlugin plugin)
@@ -510,8 +547,9 @@ namespace Oxide.Plugins
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS players (
                                  id INTEGER PRIMARY KEY   AUTOINCREMENT,
+                                 user_id TEXT UNIQUE NOT NULL,
                                  plague_level INTEGER,
-                                 kinChangesCount INTEGER,
+                                 kin_changes_count INTEGER,
                                  pristine BOOLEAN
                                );");
 
@@ -739,6 +777,10 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
+        #region Unity Components
+
         /**
          * This component adds a timers and collects all players colliders in a given radius. It then triggers custom hooks to reflect the situation of a given player
          */
@@ -793,5 +835,6 @@ namespace Oxide.Plugins
                 Interface.Oxide.CallHook("OnPlayerAlone", player);
             }
         }
+        #endregion
     }
 }
