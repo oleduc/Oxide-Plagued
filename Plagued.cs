@@ -98,7 +98,7 @@ namespace Oxide.Plugins
         {
             ProximityDetector proximityDetector = player.gameObject.GetComponent<ProximityDetector>();
             proximityDetector.disableProximityCheck();
-            // Puts(player.displayName + " is no longer watched!");
+            //Puts(player.displayName + " is no longer watched!");
         }
 
         void OnRunPlayerMetabolism(PlayerMetabolism metabolism)
@@ -133,97 +133,46 @@ namespace Oxide.Plugins
 
             //Interface.Oxide.LogInfo("Infection stage " + (plagueLevel / 1000).ToString());
 
-            if (plagueLevel == 0)
-            {
-                //Interface.Oxide.LogInfo("Uninfected");
-                return;
-            }
-            if (plagueLevel >= 1)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 1 " + player.displayName + " " + player.userID);
-                metabolism.pending_health.value = metabolism.pending_health.value + (defaultHealthGain / 2f);
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 1000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 2");
-                metabolism.calories.value = metabolism.calories.value - ((defaultCaloriesLoss * 3f) + (metabolism.heartrate.value / 10f));
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 2000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 3");
-                metabolism.hydration.value = metabolism.hydration.value - ((defaultHydrationLoss * 3f) + (metabolism.heartrate.value / 10f));
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 3000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 4");
-                metabolism.pending_health.value = metabolism.pending_health.value - (defaultHealthGain / 2f);
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 4000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 5");
-                metabolism.comfort.value = -1;
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 5000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 6");
-                metabolism.calories.value = metabolism.calories.value - ((defaultCaloriesLoss * 5f) + (metabolism.heartrate.value / 10f));
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 6000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 7");
-                metabolism.hydration.value = metabolism.hydration.value - ((defaultHydrationLoss * 5f) + (metabolism.heartrate.value / 10f));
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 7000)
-            {
-                ///Interface.Oxide.LogInfo("Infection stage 8");
-                metabolism.temperature.value = metabolism.temperature.value - 0.05f;
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel >= 8000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 9");
-                metabolism.bleeding.value = metabolism.bleeding.value + 0.005f;
-            }
-            else
-            {
-                return;
-            }
-            if (plagueLevel == 10000)
-            {
-                //Interface.Oxide.LogInfo("Infection stage 10");
-                metabolism.poison.value = 2;
-            }
+            if (plagueLevel == 0) return;
+
+            if (plagueLevel <= 1) return;
+            //Interface.Oxide.LogInfo("Infection stage 1 " + player.displayName + " " + player.userID);
+            metabolism.pending_health.value = metabolism.pending_health.value + (defaultHealthGain / 2f);
+
+            if (plagueLevel <= 1000) return;
+            //Interface.Oxide.LogInfo("Infection stage 2");
+            metabolism.calories.value = metabolism.calories.value - ((defaultCaloriesLoss * 3f) + (metabolism.heartrate.value / 10f));
+
+            if (plagueLevel <= 2000) return;
+            //Interface.Oxide.LogInfo("Infection stage 3");
+            metabolism.hydration.value = metabolism.hydration.value - ((defaultHydrationLoss * 3f) + (metabolism.heartrate.value / 10f));
+
+            if (plagueLevel <= 3000) return;
+            metabolism.pending_health.value = metabolism.pending_health.value - (defaultHealthGain / 2f);
+
+            if (plagueLevel <= 4000) return;
+            //Interface.Oxide.LogInfo("Infection stage 5");
+            metabolism.comfort.value = -1;
+
+            if (plagueLevel <= 5000) return;
+            //Interface.Oxide.LogInfo("Infection stage 6");
+            metabolism.calories.value = metabolism.calories.value - ((defaultCaloriesLoss * 5f) + (metabolism.heartrate.value / 10f));
+
+            if (plagueLevel <= 6000) return;
+            //Interface.Oxide.LogInfo("Infection stage 7");
+            metabolism.hydration.value = metabolism.hydration.value - ((defaultHydrationLoss * 5f) + (metabolism.heartrate.value / 10f));
+
+            if (plagueLevel <= 7000) return;
+            ///Interface.Oxide.LogInfo("Infection stage 8");
+            metabolism.temperature.value = metabolism.temperature.value - 0.05f;
+
+            if (plagueLevel <= 8000) return;
+            //Interface.Oxide.LogInfo("Infection stage 9");
+            metabolism.bleeding.value = metabolism.bleeding.value + 0.2f;
+
+            if (plagueLevel < 10000) return;
+            //Interface.Oxide.LogInfo("Infection stage 10");
+            metabolism.poison.value = 2;
         }
 
         void OnPlayerProximity(BasePlayer player, BasePlayer[] players)
@@ -237,6 +186,7 @@ namespace Oxide.Plugins
 
         void OnPlayerAlone(BasePlayer player)
         {
+            Puts("OnPlayerAlone: "+ player.userID);
             if (playerStates.ContainsKey(player.userID))
             {
                 playerStates[player.userID].decreasePlaguePenalty();
@@ -550,7 +500,7 @@ namespace Oxide.Plugins
                                  user_id TEXT UNIQUE NOT NULL,
                                  plague_level INTEGER,
                                  kin_changes_count INTEGER,
-                                 pristine BOOLEAN
+                                 pristine INTEGER
                                );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS associates (
@@ -690,7 +640,10 @@ namespace Oxide.Plugins
                         MsgPlayer(player, "I feel a bit better now.");
                         //Interface.Oxide.LogInfo(player.displayName + " is now cured.");
                     }
-                    //Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
+                    Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
+                    var sql = new Oxide.Core.Database.Sql();
+                    sql.Append(@"UPDATE players SET plague_level=" + plagueLevel.ToString() + ",pristine=" + (pristine ? 1 : 0).ToString() + " WHERE players.user_id == " + player.userID + ";");
+                    sqlite.Update(sql, sqlConnection);
                 }
             }
             
@@ -796,7 +749,7 @@ namespace Oxide.Plugins
             void Awake()
             {
                 player = GetComponent<BasePlayer>();
-                InvokeRepeating("CheckProximity", 2f, 1.5f);
+                InvokeRepeating("CheckProximity", 0, 2.5f);
             }
 
             void OnDestroy()
