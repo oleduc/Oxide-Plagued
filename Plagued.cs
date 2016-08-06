@@ -623,6 +623,8 @@ namespace Oxide.Plugins
                         MsgPlayer(player, "I don't feel so good.");
                         //Interface.Oxide.LogInfo(player.displayName + " is now sick.");
                     }
+
+                    syncPlagueLevel();
                 }
 
                 //Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
@@ -640,10 +642,8 @@ namespace Oxide.Plugins
                         MsgPlayer(player, "I feel a bit better now.");
                         //Interface.Oxide.LogInfo(player.displayName + " is now cured.");
                     }
-                    Interface.Oxide.LogInfo(player.displayName + "'s new plague level: " + plagueLevel.ToString());
-                    var sql = new Oxide.Core.Database.Sql();
-                    sql.Append(@"UPDATE players SET plague_level=" + plagueLevel.ToString() + ",pristine=" + (pristine ? 1 : 0).ToString() + " WHERE players.user_id == " + player.userID + ";");
-                    sqlite.Update(sql, sqlConnection);
+
+                    syncPlagueLevel();
                 }
             }
             
@@ -727,6 +727,13 @@ namespace Oxide.Plugins
             public bool getPristine()
             {
                 return pristine;
+            }
+
+            private void syncPlagueLevel()
+            {
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(@"UPDATE players SET plague_level=" + plagueLevel.ToString() + ",pristine=" + (pristine ? 1 : 0).ToString() + " WHERE players.user_id == " + player.userID + ";");
+                sqlite.Update(sql, sqlConnection);
             }
         }
 
