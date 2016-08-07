@@ -544,11 +544,11 @@ namespace Oxide.Plugins
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin (
                                 id INTEGER PRIMARY KEY   AUTOINCREMENT,
-                                player_id integer NOT NULL,
-                                kin_id integer NOT NULL,
+                                player_one_id integer NOT NULL,
+                                player_two_id integer NOT NULL,
                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                FOREIGN KEY (player_id) REFERENCES players(id),
-                                FOREIGN KEY (kin_id) REFERENCES players(id)
+                                FOREIGN KEY (player_one_id) REFERENCES players(id),
+                                FOREIGN KEY (player_two_id) REFERENCES players(id)
                             );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin_request (
@@ -686,6 +686,7 @@ namespace Oxide.Plugins
             {
                 if (associations.Count == 0) return;
 
+                List<ulong> to_remove = new List<ulong>();
                 var sql = new Oxide.Core.Database.Sql();
 
                 foreach (ulong key in associations.Keys)
@@ -699,8 +700,13 @@ namespace Oxide.Plugins
                     } else if (new_affinity <= 0)
                     {
                         sql.Append(DeleteAssociation, association.id);
-                        associations.Remove(key);
+                        to_remove.Add(key);
                     }
+                }
+
+                foreach(ulong keyToRemove in to_remove)
+                {
+                    associations.Remove(keyToRemove);
                 }
 
                 sqlite.ExecuteNonQuery(sql, sqlConnection);
