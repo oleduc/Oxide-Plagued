@@ -460,7 +460,9 @@ namespace Oxide.Plugins
             private List<ulong> kinRequests;
 
             private const string UpdateAssociation = "UPDATE associations SET level=@0 WHERE associations.id = @1;";
-            private const string InsertAssociation = "INSERT INTO associations (player_id,associated_id,level) VALUES (@0,@1,@3);";
+            private const string InsertAssociation = "INSERT INTO associations (player_id,associate_id,level) VALUES (@0,@1,@2);";
+            private const string CheckAssociationExists = "SELECT id FROM associations WHERE player_id == @0 AND associate_id == @1;";
+            private const string DeleteAssociation = "DELETE FROM associations WHERE id=@0";
             private const string InsertPlayer = "INSERT OR IGNORE INTO players (user_id, name, plague_level, kin_changes_count, pristine) VALUES (@0, @1,0,0,1);";
             private const string SelectPlayer = "SELECT * FROM players WHERE players.user_id == @0;";
             private const string UpdatePlayerPlagueLevel = "UPDATE players SET plague_level=@0,pristine=@1 WHERE players.user_id == @3;";
@@ -570,11 +572,13 @@ namespace Oxide.Plugins
             /**
              * Increases the affinity of an associate and returns his new affinity
              */
-            public int increaseAssociateAffinity(BasePlayer associate)
+            private Association increaseAssociateAffinity(BasePlayer associate)
             {
-                if (associate == null) return -1;
-                if (player.userID == associate.userID) return -1;
+                if (associate == null) return null;
+                if (player.userID == associate.userID) return null;
+
                 Association association;
+
                 if (associations.ContainsKey(associate.userID))
                 {
                     association = associations[associate.userID];
@@ -588,7 +592,7 @@ namespace Oxide.Plugins
 
                 //Interface.Oxide.LogInfo(player.displayName + " -> " + associate.displayName + " = " + associates[associate.userID].ToString());
 
-                return association.level;
+                return association;
             }
 
             /**
@@ -598,18 +602,26 @@ namespace Oxide.Plugins
             public void increasePlaguePenalty(BasePlayer[] associates)
             {
                 int contagionVectorsCount = 0;
+                var sql = new Oxide.Core.Database.Sql();
 
                 foreach (BasePlayer associate in associates)
                 {
                     if (kins.Contains(associate.userID)) continue;
 
-                    int affinity = increaseAssociateAffinity(associate);
+                    Association association = increaseAssociateAffinity(associate);
+
+                    if (association == null) continue;
                     
-                    if (affinity >= plagueMinAffinity)
+                    sql.Append(UpdateAssociation, association.level, association.id);
+
+                    if (association.level >= plagueMinAffinity)
                     {
                         contagionVectorsCount++;
                     }
                 }
+
+                sqlite.Update(sql, sqlConnection);
+
 
                 if (contagionVectorsCount > 0)
                 {
@@ -627,10 +639,12 @@ namespace Oxide.Plugins
              */
             public void decreasePlaguePenalty()
             {
-                if (pristine) return;
-
                 decreaseAssociationsLevel();
-                decreasePlagueLevel();
+
+                if (!pristine)
+                {
+                    decreasePlagueLevel();
+                }
             }
 
             public void increasePlagueLevel(int contagionVectorCount)
@@ -670,19 +684,26 @@ namespace Oxide.Plugins
 
             public void decreaseAssociationsLevel()
             {
-                List<ulong> keys = new List<ulong>(associations.Keys);
+                if (associations.Count == 0) return;
+
                 var sql = new Oxide.Core.Database.Sql();
 
-                foreach (ulong key in keys)
+                foreach (ulong key in associations.Keys)
                 {
-                    if ((associations[key].level - affinityDecRate) >= 0)
+                    Association association = associations[key];
+                    int new_affinity = association.level - affinityDecRate;
+                    if (new_affinity >= 1)
                     {
-                        associations[key].level = associations[key].level - affinityDecRate;
-                        associations[key].getSaveSql(sql);
+                        association.level = association.level - affinityDecRate;
+                        sql.Append(UpdateAssociation, association.level, association.id);
+                    } else if (new_affinity <= 0)
+                    {
+                        sql.Append(DeleteAssociation, association.id);
+                        associations.Remove(key);
                     }
                 }
 
-                sqlite.Update(sql, sqlConnection);
+                sqlite.ExecuteNonQuery(sql, sqlConnection);
             }
 
 
@@ -764,7 +785,7 @@ namespace Oxide.Plugins
 
                 foreach (Association association in associations.Values)
                 {
-                    associatesList.Add(String.Format("{0} (Id: {1} | Level: {2})", association.associate_name, association.associate_id, association.level / 1000));
+                    associatesList.Add(String.Format("{0} (Id: {1} | Level: {2})", association.associate_name, association.associate_id, association.getAffinityLabel()));
                 }
 
                 return associatesList;
@@ -783,6 +804,7 @@ namespace Oxide.Plugins
             private Association createAssociation(ulong associate_user_id)
             {
                 Association association = new Association();
+
                 var sql = new Oxide.Core.Database.Sql();
                 sql.Append(SelectPlayer, associate_user_id);
                 sqlite.Query(sql, sqlConnection, list => {
@@ -835,20 +857,24 @@ namespace Oxide.Plugins
                 public string associate_name;
                 public int level;
 
-                public Oxide.Core.Database.Sql getSaveSql(Oxide.Core.Database.Sql sql)
-                {
-                    sql.Append(UpdateAssociation, level, id);
-
-                    return sql;
-                }
-
                 public void create()
                 {
                     var sql = new Oxide.Core.Database.Sql();
-                    sql.Append(InsertAssociation, player_id, associate_id, level);
-                    sqlite.Insert(sql, sqlConnection, result => {
-                        if (result == null) return;
-                        id = (int)sqlConnection.LastInsertRowId;
+                    sql.Append(CheckAssociationExists, player_id, associate_id);
+
+                    // Check if the relationship exists before creating it
+                    sqlite.Query(sql, sqlConnection, check_results =>
+                    {
+                        if (check_results.Count > 0) return;
+
+                        sql = new Oxide.Core.Database.Sql();
+
+                        sql.Append(InsertAssociation, player_id, associate_id, level);
+                        sqlite.Insert(sql, sqlConnection, result =>
+                        {
+                            if (result == null) return;
+                            id = (int)sqlConnection.LastInsertRowId;
+                        });
                     });
                 }
 
@@ -856,10 +882,21 @@ namespace Oxide.Plugins
                 {
                     id = Convert.ToInt32(association["id"]);
                     associate_name = Convert.ToString(association["name"]);
-                    associate_user_id = (ulong)Convert.ToUInt32(association["user_id"]);
+                    associate_user_id = (ulong) Convert.ToInt64(association["user_id"]);
                     associate_id = Convert.ToInt32(association["associate_id"]);
                     player_id = Convert.ToInt32(association["player_id"]);
                     level = Convert.ToInt32(association["level"]);
+                }
+
+                public string getAffinityLabel()
+                {
+                    if (level >= plagueMinAffinity)
+                    {
+                        return "Associate";
+                    } else
+                    {
+                        return "Acquaintance";
+                    }
                 }
             }
         }
