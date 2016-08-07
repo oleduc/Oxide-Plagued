@@ -186,7 +186,7 @@ namespace Oxide.Plugins
 
         void OnPlayerAlone(BasePlayer player)
         {
-            Puts("OnPlayerAlone: "+ player.userID);
+            //Puts("OnPlayerAlone: "+ player.userID);
             if (playerStates.ContainsKey(player.userID))
             {
                 playerStates[player.userID].decreasePlaguePenalty();
@@ -440,9 +440,58 @@ namespace Oxide.Plugins
             private int plagueLevel;
             private int kinChangesCount;
             private bool pristine;
-            private Dictionary<ulong, int> associates;
+            private Dictionary<ulong, Association> associations;
             private List<ulong> kins;
             private List<ulong> kinRequests;
+
+            private const string UpdateAssociation = "UPDATE associations SET level=@0 WHERE associations.id = @1;";
+            private const string InsertAssociation = "INSERT INTO associations (player_id,associated_id,level) VALUES (@0,@1,@3);";
+            private const string InsertPlayer = "INSERT OR IGNORE INTO players (user_id, name, plague_level, kin_changes_count, pristine) VALUES (@0, @1,0,0,1);";
+            private const string SelectPlayer = "SELECT * FROM players WHERE players.user_id == @0;";
+            private const string UpdatePlayerPlagueLevel = "UPDATE players SET plague_level=@0,pristine=@1 WHERE players.user_id == @3;";
+            private const string SelectAssociations = @"
+                SELECT associations.id, associations.player_id, associations.associate_id, associations.level, players.user_id, players.name
+                FROM associations
+                JOIN players ON associations.associate_id = players.id
+                WHERE associations.player_id = @0
+            ";
+
+            private class Association
+            {
+                public int id;
+                public int player_id;
+                public int associate_id;
+                public ulong associate_user_id;
+                public string associate_name;
+                public int level;
+
+                public Oxide.Core.Database.Sql getSaveSql(Oxide.Core.Database.Sql sql)
+                {
+                    sql.Append(UpdateAssociation, level, id);
+
+                    return sql;
+                }
+
+                public void  create()
+                {
+                    var sql = new Oxide.Core.Database.Sql();
+                    sql.Append(InsertAssociation, player_id, associate_id, level);
+                    sqlite.Insert(sql, sqlConnection, result => {
+                        if (result == null) return;
+                        id = (int) sqlConnection.LastInsertRowId;
+                    });
+                }
+
+                public void load(Dictionary<string, object> association)
+                {
+                    id = Convert.ToInt32(association["id"]);
+                    associate_name = Convert.ToString(association["name"]);
+                    associate_user_id = (ulong)Convert.ToUInt32(association["user_id"]);
+                    associate_id = Convert.ToInt32(association["associate_id"]);
+                    player_id = Convert.ToInt32(association["player_id"]);
+                    level = Convert.ToInt32(association["level"]);
+                }
+            }
 
             /**
              * Retrieves a player from database and restore its store or creates a new database entry
@@ -452,15 +501,14 @@ namespace Oxide.Plugins
                 player = newPlayer;
 
                 var sql = new Oxide.Core.Database.Sql();
-                sql.Append(@"INSERT OR IGNORE INTO players (user_id, plague_level, kin_changes_count, pristine) VALUES (" + player.userID + ",0,0,1);");
-
+                sql.Append(InsertPlayer, player.userID, player.displayName);
                 sqlite.Insert(sql, sqlConnection, create_results =>
                 {
                     if (create_results == 1) Interface.Oxide.LogInfo("New user created!");
 
                     sql = new Oxide.Core.Database.Sql();
                     // Do we really need to worry about SQL injection here?
-                    sql.Append(@"SELECT * FROM players WHERE players.user_id == " + player.userID + ";");
+                    sql.Append(SelectPlayer, player.userID);
 
                     sqlite.Query(sql, sqlConnection, results =>
                     {
@@ -484,9 +532,10 @@ namespace Oxide.Plugins
                     });
                 });
 
-                associates = new Dictionary<ulong, int>();
+                associations = new Dictionary<ulong, Association>();
                 kins = new List<ulong>();
                 kinRequests = new List<ulong>();
+                loadAssociations();
             }
 
             public static void setupDatabase(RustPlugin plugin)
@@ -498,12 +547,13 @@ namespace Oxide.Plugins
                 sql.Append(@"CREATE TABLE IF NOT EXISTS players (
                                  id INTEGER PRIMARY KEY   AUTOINCREMENT,
                                  user_id TEXT UNIQUE NOT NULL,
+                                 name TEXT,
                                  plague_level INTEGER,
                                  kin_changes_count INTEGER,
                                  pristine INTEGER
                                );");
 
-                sql.Append(@"CREATE TABLE IF NOT EXISTS associates (
+                sql.Append(@"CREATE TABLE IF NOT EXISTS associations (
                                 id INTEGER PRIMARY KEY   AUTOINCREMENT,
                                 player_id integer NOT NULL,
                                 associate_id integer NOT NULL,
@@ -546,23 +596,25 @@ namespace Oxide.Plugins
             {
                 if (associate == null) return -1;
                 if (player.userID == associate.userID) return -1;
-
-                if (associates.ContainsKey(associate.userID))
+                Association association;
+                if (associations.ContainsKey(associate.userID))
                 {
-                    if ((associates[associate.userID] + affinityIncRate) < int.MaxValue) associates[associate.userID] += affinityIncRate;
+                    association = associations[associate.userID];
+                    if ((association.level + affinityIncRate) < int.MaxValue) association.level += affinityIncRate;
                 }
                 else
                 {
-                    associates.Add(associate.userID, 0);
+                    association = createAssociation(associate.userID);
+                    associations.Add(associate.userID, association);
                 }
 
                 //Interface.Oxide.LogInfo(player.displayName + " -> " + associate.displayName + " = " + associates[associate.userID].ToString());
 
-                return associates[associate.userID];
+                return association.level;
             }
 
             /**
-             * Increases the affinity of all the associates in the list and increases the plague penalty if some associates are over the plague threshold
+             * Increases the affinity of all the associations in the list and increases the plague penalty if some associations are over the plague threshold
              * It also decreases the plague treshold if all the associates are kin or under the threshold
              */
             public void increasePlaguePenalty(BasePlayer[] associates)
@@ -593,22 +645,25 @@ namespace Oxide.Plugins
             }
 
             /**
-             * Decreases the affinity of all associates and decreases the plague level.
+             * Decreases the affinity of all associations and decreases the plague level.
              */
             public void decreasePlaguePenalty()
             {
                 if (pristine) return;
 
-                List<ulong> keys = new List<ulong>(associates.Keys);
+                List<ulong> keys = new List<ulong>(associations.Keys);
+                var sql = new Oxide.Core.Database.Sql();
 
                 foreach (ulong key in keys)
                 {
-                    if ((associates[key] - affinityDecRate) >= 0)
+                    if ((associations[key].level - affinityDecRate) >= 0)
                     {
-                        associates[key] = associates[key] - affinityDecRate;
+                        associations[key].level = associations[key].level - affinityDecRate;
+                        associations[key].getSaveSql(sql);
                     }
                 }
 
+                sqlite.Update(sql, sqlConnection);
                 decreasePlagueLevel();
             }
 
@@ -729,11 +784,50 @@ namespace Oxide.Plugins
                 return pristine;
             }
 
+            private Association createAssociation(ulong associate_user_id)
+            {
+                Association association = new Association();
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(SelectPlayer, associate_user_id);
+                sqlite.Query(sql, sqlConnection, list => {
+                    if (list == null) return;
+
+                    foreach (var user in list)
+                    {
+                        association.player_id = id;
+                        association.associate_id = Convert.ToInt32(user["id"]);
+                        association.associate_user_id = associate_user_id;
+                        association.associate_name = Convert.ToString(user["name"]);
+                        association.level = 0;
+                        break;
+                    }
+
+                    association.create();
+                });
+
+                return association;
+            }
+
             private void syncPlagueLevel()
             {
                 var sql = new Oxide.Core.Database.Sql();
-                sql.Append(@"UPDATE players SET plague_level=" + plagueLevel.ToString() + ",pristine=" + (pristine ? 1 : 0).ToString() + " WHERE players.user_id == " + player.userID + ";");
+                sql.Append(UpdatePlayerPlagueLevel, plagueLevel, (pristine ? 1 : 0), player.userID);
                 sqlite.Update(sql, sqlConnection);
+            }
+
+            private void loadAssociations()
+            {
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(SelectAssociations, id);
+                sqlite.Query(sql, sqlConnection, results => {
+                    if (results == null) return;
+
+                    foreach (var association in results) {
+                        ulong associate_user_id = (ulong)Convert.ToUInt32(results);
+                        associations[associate_user_id] = new Association();
+                        associations[associate_user_id].load(association);
+                    }
+                });
             }
         }
 
