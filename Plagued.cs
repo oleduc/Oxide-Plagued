@@ -204,6 +204,7 @@ namespace Oxide.Plugins
                 SendReply(player, "<color=#81F781>/plagued delkin</color> => <color=#D8D8D8> Remove the player you are looking at from your kin list.</color>");
                 SendReply(player, "<color=#81F781>/plagued delkin</color> <color=#F2F5A9> number </color> => <color=#D8D8D8> Remove a player from your kin list by kin number.</color>");
                 SendReply(player, "<color=#81F781>/plagued lskin</color> => <color=#D8D8D8> Display your kin list.</color>");
+                SendReply(player, "<color=#81F781>/plagued lsassociates</color> => <color=#D8D8D8> Display your associates list.</color>");
                 SendReply(player, "<color=#81F781>/plagued info</color> => <color=#D8D8D8> Display information about the workings of this mod.</color>");
 
                 return;
@@ -235,6 +236,9 @@ namespace Oxide.Plugins
                         break;
                     case "lskin":
                         cmdListKin(player);
+                        break;
+                    case "lsassociates":
+                        cmdListAssociates(player);
                         break;
                     case "info":
                         cmdInfo(player);
@@ -323,20 +327,13 @@ namespace Oxide.Plugins
         {
             List<string> kinList = playerStates[player.userID].getKinList();
 
-            if (kinList.Count == 0)
-            {
-                SendReply(player, "You have no kin.");
-                return;
-            }
+            displayList(player, "Kin", kinList);
+        }
 
-            string answerMsg = "Kin list: \n ";
-
-            foreach(string kinName in kinList)
-            {
-                answerMsg += " > " + kinName + "\n";
-            }
-
-            SendReply(player, answerMsg);
+        private void cmdListAssociates(BasePlayer player)
+        {
+            List<string> associatesList = playerStates[player.userID].getAssociatesList();
+            displayList(player, "Associates", associatesList);
         }
 
         private bool cmdInfo(BasePlayer player)
@@ -355,6 +352,24 @@ namespace Oxide.Plugins
         public static void MsgPlayer(BasePlayer player, string format, params object[] args)
         {
             if (player?.net != null) player.SendConsoleCommand("chat.add", 0, args.Length > 0 ? string.Format(format, args) : format, 1f);
+        }
+
+        public void displayList(BasePlayer player, string listName, List<string> stringList)
+        {
+            if (stringList.Count == 0)
+            {
+                SendReply(player, "You have no "+ listName.ToLower()+".");
+                return;
+            }
+
+            string answerMsg = listName + " list: \n";
+
+            foreach (string text in stringList)
+            {
+                answerMsg += "> " + text + "\n";
+            }
+
+            SendReply(player, answerMsg);
         }
 
         #endregion
@@ -456,49 +471,13 @@ namespace Oxide.Plugins
                 WHERE associations.player_id = @0
             ";
 
-            private class Association
-            {
-                public int id;
-                public int player_id;
-                public int associate_id;
-                public ulong associate_user_id;
-                public string associate_name;
-                public int level;
-
-                public Oxide.Core.Database.Sql getSaveSql(Oxide.Core.Database.Sql sql)
-                {
-                    sql.Append(UpdateAssociation, level, id);
-
-                    return sql;
-                }
-
-                public void  create()
-                {
-                    var sql = new Oxide.Core.Database.Sql();
-                    sql.Append(InsertAssociation, player_id, associate_id, level);
-                    sqlite.Insert(sql, sqlConnection, result => {
-                        if (result == null) return;
-                        id = (int) sqlConnection.LastInsertRowId;
-                    });
-                }
-
-                public void load(Dictionary<string, object> association)
-                {
-                    id = Convert.ToInt32(association["id"]);
-                    associate_name = Convert.ToString(association["name"]);
-                    associate_user_id = (ulong)Convert.ToUInt32(association["user_id"]);
-                    associate_id = Convert.ToInt32(association["associate_id"]);
-                    player_id = Convert.ToInt32(association["player_id"]);
-                    level = Convert.ToInt32(association["level"]);
-                }
-            }
-
             /**
              * Retrieves a player from database and restore its store or creates a new database entry
              */
             public PlayerState(BasePlayer newPlayer)
             {
                 player = newPlayer;
+                Interface.Oxide.LogInfo("Loading player: " + player.displayName);
 
                 var sql = new Oxide.Core.Database.Sql();
                 sql.Append(InsertPlayer, player.userID, player.displayName);
@@ -507,13 +486,11 @@ namespace Oxide.Plugins
                     if (create_results == 1) Interface.Oxide.LogInfo("New user created!");
 
                     sql = new Oxide.Core.Database.Sql();
-                    // Do we really need to worry about SQL injection here?
                     sql.Append(SelectPlayer, player.userID);
 
                     sqlite.Query(sql, sqlConnection, results =>
                     {
                         if (results == null) return;
-
                         if (results.Count > 0)
                         {
                             foreach (var entry in results)
@@ -529,13 +506,14 @@ namespace Oxide.Plugins
                         {
                             Interface.Oxide.LogInfo("Something wrong has happened: Could not find the player with the given user_id!");
                         }
+
+                        associations = new Dictionary<ulong, Association>();
+                        kins = new List<ulong>();
+                        kinRequests = new List<ulong>();
+
+                        loadAssociations();
                     });
                 });
-
-                associations = new Dictionary<ulong, Association>();
-                kins = new List<ulong>();
-                kinRequests = new List<ulong>();
-                loadAssociations();
             }
 
             public static void setupDatabase(RustPlugin plugin)
@@ -651,19 +629,7 @@ namespace Oxide.Plugins
             {
                 if (pristine) return;
 
-                List<ulong> keys = new List<ulong>(associations.Keys);
-                var sql = new Oxide.Core.Database.Sql();
-
-                foreach (ulong key in keys)
-                {
-                    if ((associations[key].level - affinityDecRate) >= 0)
-                    {
-                        associations[key].level = associations[key].level - affinityDecRate;
-                        associations[key].getSaveSql(sql);
-                    }
-                }
-
-                sqlite.Update(sql, sqlConnection);
+                decreaseAssociationsLevel();
                 decreasePlagueLevel();
             }
 
@@ -701,7 +667,25 @@ namespace Oxide.Plugins
                     syncPlagueLevel();
                 }
             }
-            
+
+            public void decreaseAssociationsLevel()
+            {
+                List<ulong> keys = new List<ulong>(associations.Keys);
+                var sql = new Oxide.Core.Database.Sql();
+
+                foreach (ulong key in keys)
+                {
+                    if ((associations[key].level - affinityDecRate) >= 0)
+                    {
+                        associations[key].level = associations[key].level - affinityDecRate;
+                        associations[key].getSaveSql(sql);
+                    }
+                }
+
+                sqlite.Update(sql, sqlConnection);
+            }
+
+
             public bool isKin(ulong kinID)
             {
                 return kins.Contains(kinID);
@@ -773,6 +757,18 @@ namespace Oxide.Plugins
 
                 return kinList;
             }
+            
+            public List<string> getAssociatesList()
+            {
+                List<string> associatesList = new List<string>();
+
+                foreach (Association association in associations.Values)
+                {
+                    associatesList.Add(String.Format("{0} (Id: {1} | Level: {2})", association.associate_name, association.associate_id, association.level / 1000));
+                }
+
+                return associatesList;
+            }
 
             public int getPlagueLevel()
             {
@@ -822,12 +818,49 @@ namespace Oxide.Plugins
                 sqlite.Query(sql, sqlConnection, results => {
                     if (results == null) return;
 
-                    foreach (var association in results) {
-                        ulong associate_user_id = (ulong)Convert.ToUInt32(results);
-                        associations[associate_user_id] = new Association();
-                        associations[associate_user_id].load(association);
+                    foreach (var association_result in results) {
+                        Association association =  new Association();
+                        association.load(association_result);
+                        associations[association.associate_user_id] = association;
                     }
                 });
+            }
+
+            private class Association
+            {
+                public int id;
+                public int player_id;
+                public int associate_id;
+                public ulong associate_user_id;
+                public string associate_name;
+                public int level;
+
+                public Oxide.Core.Database.Sql getSaveSql(Oxide.Core.Database.Sql sql)
+                {
+                    sql.Append(UpdateAssociation, level, id);
+
+                    return sql;
+                }
+
+                public void create()
+                {
+                    var sql = new Oxide.Core.Database.Sql();
+                    sql.Append(InsertAssociation, player_id, associate_id, level);
+                    sqlite.Insert(sql, sqlConnection, result => {
+                        if (result == null) return;
+                        id = (int)sqlConnection.LastInsertRowId;
+                    });
+                }
+
+                public void load(Dictionary<string, object> association)
+                {
+                    id = Convert.ToInt32(association["id"]);
+                    associate_name = Convert.ToString(association["name"]);
+                    associate_user_id = (ulong)Convert.ToUInt32(association["user_id"]);
+                    associate_id = Convert.ToInt32(association["associate_id"]);
+                    player_id = Convert.ToInt32(association["player_id"]);
+                    level = Convert.ToInt32(association["level"]);
+                }
             }
         }
 
