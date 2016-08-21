@@ -317,9 +317,25 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool cmdDelKin(BasePlayer player, int position)
+        private bool cmdDelKin(BasePlayer player, int id)
         {
-            SendReply(player, "Deleting kin by name is not yet supported.");
+            PlayerState state = playerStates[player.userID];
+
+            if (state.removeKinById(id))
+            {
+                foreach(var item in playerStates)
+                {
+                    if (item.Value.getId() == id)
+                    {
+                        item.Value.forceRemoveKin(player.userID);
+                    }
+                }
+                SendReply(player, "Successfully removed kin.");
+            } else
+            {
+                SendReply(player, "Could not remove kin.");
+            }
+            
             return false;
         }
 
@@ -524,7 +540,7 @@ namespace Oxide.Plugins
 
                         loadAssociations();
                         loadKinList();
-                        loadKinRequestList();
+                        //loadKinRequestList();
                     });
                 });
             }
@@ -758,11 +774,27 @@ namespace Oxide.Plugins
                 if (kins.Count + 1 <= maxKin && !isKinByUserID(kinUserID))
                 {
                     if (kinRequests.Contains(kinUserID)) kinRequests.Remove(kinUserID);
-                    Kin newKin = new Kin(id);
+                    Kin newKin = createKin(kinUserID);
                     newKin.kin_user_id = kinUserID;
                     kins.Add(kinUserID, newKin);
 
                     return true;
+                }
+
+                return false;
+            }
+
+            public bool removeKinById(int id)
+            {
+                if ((kinChangesCount + 1) <= maxKinChanges)
+                {
+                    foreach(Kin kin in kins.Values)
+                    {
+                        if (kin.kin_id == id)
+                        {
+                            return forceRemoveKin(kin.kin_user_id);
+                        }
+                    }
                 }
 
                 return false;
@@ -787,6 +819,7 @@ namespace Oxide.Plugins
 
                     var sql = new Oxide.Core.Database.Sql();
                     sql.Append(DeleteKin, kin.self_id, kin.kin_id);
+                    sqlite.ExecuteNonQuery(sql, sqlConnection);
 
                     kins.Remove(kinUserID);
 
@@ -823,6 +856,11 @@ namespace Oxide.Plugins
             public int getPlagueLevel()
             {
                 return plagueLevel;
+            }
+
+            public int getId()
+            {
+                return id;
             }
 
             public bool getPristine()
