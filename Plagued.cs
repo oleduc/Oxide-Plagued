@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Plagued", "Wernesgruner", 0.2)]
+    [Info("Plagued", "Wernesgruner", 0.3)]
     [Description("Everyone is infected.")]
 
     class Plagued : RustPlugin
