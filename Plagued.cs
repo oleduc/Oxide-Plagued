@@ -547,21 +547,21 @@ namespace Oxide.Plugins
                             );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin (
-                                id INTEGER PRIMARY KEY   AUTOINCREMENT,
                                 player_one_id integer NOT NULL,
                                 player_two_id integer NOT NULL,
                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                                 FOREIGN KEY (player_one_id) REFERENCES players(id),
-                                FOREIGN KEY (player_two_id) REFERENCES players(id)
+                                FOREIGN KEY (player_two_id) REFERENCES players(id),
+                                PRIMARY KEY (player_one_id,player_two_id)
                             );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin_request (
-                                id INTEGER PRIMARY KEY   AUTOINCREMENT,
                                 requester_id integer NOT NULL,
                                 target_id integer NOT NULL,
                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                                 FOREIGN KEY (requester_id) REFERENCES players(id),
-                                FOREIGN KEY (target_id) REFERENCES players(id)
+                                FOREIGN KEY (target_id) REFERENCES players(id),
+                                PRIMARY KEY (requester_id,target_id)
                             );");
 
 
