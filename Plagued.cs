@@ -472,7 +472,14 @@ namespace Oxide.Plugins
                 JOIN players ON associations.associate_id = players.id
                 WHERE associations.player_id = @0
             ";
-            private const string SelectKinList = @"";
+            private const string SelectKinList = @"
+                SELECT kin.self_id, kin.kin_id, players.name as kin_name, players.user_id as kin_user_id
+                FROM kin
+                JOIN players ON kin.kin_id = players.id
+                WHERE kin.self_id = @0
+            ";
+            private const string InsertKin = "INSERT INTO kin (self_id,kin_id) VALUES (@0,@1);";
+            private const string DeleteKin = "DELETE FROM kin WHERE self_id=@0 AND kin_id=@1";
             private const string SelectKinRequestList = @"";
 
             /**
@@ -547,12 +554,12 @@ namespace Oxide.Plugins
                             );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin (
-                                player_one_id integer NOT NULL,
-                                player_two_id integer NOT NULL,
+                                self_id integer NOT NULL,
+                                kin_id integer NOT NULL,
                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                FOREIGN KEY (player_one_id) REFERENCES players(id),
-                                FOREIGN KEY (player_two_id) REFERENCES players(id),
-                                PRIMARY KEY (player_one_id,player_two_id)
+                                FOREIGN KEY (self_id) REFERENCES players(id),
+                                FOREIGN KEY (kin_id) REFERENCES players(id),
+                                PRIMARY KEY (self_id,kin_id)
                             );");
 
                 sql.Append(@"CREATE TABLE IF NOT EXISTS kin_request (
@@ -751,7 +758,7 @@ namespace Oxide.Plugins
                 if (kins.Count + 1 <= maxKin && !isKinByUserID(kinUserID))
                 {
                     if (kinRequests.Contains(kinUserID)) kinRequests.Remove(kinUserID);
-                    Kin newKin = new Kin();
+                    Kin newKin = new Kin(id);
                     newKin.kin_user_id = kinUserID;
                     kins.Add(kinUserID, newKin);
 
@@ -763,12 +770,9 @@ namespace Oxide.Plugins
 
             public bool removeKin(ulong kinUserID)
             {
-                if (isKinByUserID(kinUserID) && (kinChangesCount + 1) <= maxKinChanges)
+                if ((kinChangesCount + 1) <= maxKinChanges)
                 {
-                    kinChangesCount++;
-                    kins.Remove(kinUserID);
-
-                    return true;
+                    return forceRemoveKin(kinUserID);
                 }
 
                 return false;
@@ -779,6 +783,11 @@ namespace Oxide.Plugins
                 if (isKinByUserID(kinUserID))
                 {
                     kinChangesCount++;
+                    Kin kin = kins[kinUserID];
+
+                    var sql = new Oxide.Core.Database.Sql();
+                    sql.Append(DeleteKin, kin.self_id, kin.kin_id);
+
                     kins.Remove(kinUserID);
 
                     return true;
@@ -823,7 +832,7 @@ namespace Oxide.Plugins
 
             private Kin createKin(ulong kinUserId)
             {
-                Kin kin = new Kin();
+                Kin kin = new Kin(id);
 
                 var sql = new Oxide.Core.Database.Sql();
                 sql.Append(SelectPlayer, kinUserId);
@@ -901,7 +910,7 @@ namespace Oxide.Plugins
 
                     foreach (var kinResult in results)
                     {
-                        Kin kin = new Kin();
+                        Kin kin = new Kin(id);
                         kin.load(kinResult);
                         kins[kin.kin_user_id] = kin;
                     }
@@ -976,19 +985,36 @@ namespace Oxide.Plugins
 
             private class Kin
             {
-                public int id;
+                public int self_id;
                 public int kin_id;
                 public ulong kin_user_id;
                 public string kin_name;
+                public int player_one_id;
+                public int player_two_id;
 
-                public void create()
+                private Kin()
                 {
 
                 }
 
+                public Kin(int p_self_id)
+                {
+                    self_id = p_self_id;
+                }
+
+                public void create()
+                {
+                    var sql = new Oxide.Core.Database.Sql();
+                    sql.Append(InsertKin, self_id, kin_id);
+                    sqlite.Insert(sql, sqlConnection);
+                }
+
                 public void load(Dictionary<string, object> kin)
                 {
-
+                    self_id = Convert.ToInt32(kin["self_id"]);
+                    kin_id = Convert.ToInt32(kin["kin_id"]);
+                    kin_name = Convert.ToString(kin["kin_name"]);
+                    kin_user_id = (ulong)Convert.ToInt64(kin["kin_user_id"]);
                 }
             }
         }
