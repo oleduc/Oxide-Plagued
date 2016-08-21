@@ -39,9 +39,9 @@ It still has to be fine tuned, but the idea is you can still interact with your 
 - Kin system
 - Commands
 - Configuration files
+- Database persistence
 
 ##Planned features
-- Database persistence
 - Collaboration analytics
 - Sick kin dynamics
 - Anti cheesing balances
