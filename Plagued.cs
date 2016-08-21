@@ -259,7 +259,7 @@ namespace Oxide.Plugins
                 PlayerState state = playerStates[player.userID];
                 PlayerState targetPlayerState = playerStates[targetPlayer.userID];
 
-                if (state.isKin(targetPlayer.userID))
+                if (state.isKinByUserID(targetPlayer.userID))
                 {
                     SendReply(player, targetPlayer.displayName + " is already your kin!");
                     return;
@@ -296,9 +296,9 @@ namespace Oxide.Plugins
                 PlayerState state = playerStates[player.userID];
                 PlayerState targetPlayerState = playerStates[targetPlayer.userID];
 
-                if (!state.isKin(targetPlayer.userID))
+                if (!state.isKinByUserID(targetPlayer.userID))
                 {
-                    SendReply(player, targetPlayer.displayName + " not your kin!");
+                    SendReply(player, targetPlayer.displayName + " is not your kin!");
 
                     return false;
                 }
@@ -456,7 +456,7 @@ namespace Oxide.Plugins
             private int kinChangesCount;
             private bool pristine;
             private Dictionary<ulong, Association> associations;
-            private List<ulong> kins;
+            private Dictionary<ulong, Kin> kins;
             private List<ulong> kinRequests;
 
             private const string UpdateAssociation = "UPDATE associations SET level=@0 WHERE associations.id = @1;";
@@ -472,6 +472,8 @@ namespace Oxide.Plugins
                 JOIN players ON associations.associate_id = players.id
                 WHERE associations.player_id = @0
             ";
+            private const string SelectKinList = @"";
+            private const string SelectKinRequestList = @"";
 
             /**
              * Retrieves a player from database and restore its store or creates a new database entry
@@ -510,10 +512,12 @@ namespace Oxide.Plugins
                         }
 
                         associations = new Dictionary<ulong, Association>();
-                        kins = new List<ulong>();
+                        kins = new Dictionary<ulong, Kin>();
                         kinRequests = new List<ulong>();
 
                         loadAssociations();
+                        loadKinList();
+                        loadKinRequestList();
                     });
                 });
             }
@@ -606,7 +610,7 @@ namespace Oxide.Plugins
 
                 foreach (BasePlayer associate in associates)
                 {
-                    if (kins.Contains(associate.userID)) continue;
+                    if (isKinByUserID(associate.userID)) continue;
 
                     Association association = increaseAssociateAffinity(associate);
 
@@ -713,9 +717,17 @@ namespace Oxide.Plugins
             }
 
 
-            public bool isKin(ulong kinID)
+            public bool isKinByUserID(ulong userID)
             {
-                return kins.Contains(kinID);
+                foreach(var item in kins)
+                {
+                    if (item.Value.kin_user_id == userID)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             public bool hasKinRequest(ulong kinID)
@@ -735,11 +747,13 @@ namespace Oxide.Plugins
                 return false;
             }
 
-            public bool addKin(ulong kinID) {
-                if (kins.Count + 1 <= maxKin && !isKin(kinID))
+            public bool addKin(ulong kinUserID) {
+                if (kins.Count + 1 <= maxKin && !isKinByUserID(kinUserID))
                 {
-                    if (kinRequests.Contains(kinID)) kinRequests.Remove(kinID);
-                    kins.Add(kinID);
+                    if (kinRequests.Contains(kinUserID)) kinRequests.Remove(kinUserID);
+                    Kin newKin = new Kin();
+                    newKin.kin_user_id = kinUserID;
+                    kins.Add(kinUserID, newKin);
 
                     return true;
                 }
@@ -747,12 +761,12 @@ namespace Oxide.Plugins
                 return false;
             }
 
-            public bool removeKin(ulong kinID)
+            public bool removeKin(ulong kinUserID)
             {
-                if (kins.Contains(kinID) && (kinChangesCount + 1) <= maxKinChanges)
+                if (isKinByUserID(kinUserID) && (kinChangesCount + 1) <= maxKinChanges)
                 {
                     kinChangesCount++;
-                    kins.Remove(kinID);
+                    kins.Remove(kinUserID);
 
                     return true;
                 }
@@ -760,12 +774,12 @@ namespace Oxide.Plugins
                 return false;
             }
 
-            public bool forceRemoveKin(ulong kinID)
+            public bool forceRemoveKin(ulong kinUserID)
             {
-                if (kins.Contains(kinID))
+                if (isKinByUserID(kinUserID))
                 {
                     kinChangesCount++;
-                    kins.Remove(kinID);
+                    kins.Remove(kinUserID);
 
                     return true;
                 }
@@ -777,9 +791,9 @@ namespace Oxide.Plugins
             {
                 List<string> kinList = new List<string>();
 
-                foreach (ulong kinID in kins)
+                foreach (Kin kin in kins.Values)
                 {
-                    kinList.Add(kinID.ToString());
+                    kinList.Add(String.Format("{0} (Id: {1})", kin.kin_name, kin.kin_id));
                 }
 
                 return kinList;
@@ -805,6 +819,30 @@ namespace Oxide.Plugins
             public bool getPristine()
             {
                 return pristine;
+            }
+
+            private Kin createKin(ulong kinUserId)
+            {
+                Kin kin = new Kin();
+
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(SelectPlayer, kinUserId);
+
+                sqlite.Query(sql, sqlConnection, list => {
+                    if (list == null) return;
+
+                    foreach (var user in list)
+                    {
+                        kin.kin_id = Convert.ToInt32(user["id"]);
+                        kin.kin_name = Convert.ToString(user["name"]);
+                        kin.kin_user_id = kinUserId;
+                        break;
+                    }
+
+                    kin.create();
+                });
+
+                return kin;
             }
 
             private Association createAssociation(ulong associate_user_id)
@@ -850,6 +888,36 @@ namespace Oxide.Plugins
                         Association association =  new Association();
                         association.load(association_result);
                         associations[association.associate_user_id] = association;
+                    }
+                });
+            }
+
+            private void loadKinList()
+            {
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(SelectKinList, id);
+                sqlite.Query(sql, sqlConnection, results => {
+                    if (results == null) return;
+
+                    foreach (var kinResult in results)
+                    {
+                        Kin kin = new Kin();
+                        kin.load(kinResult);
+                        kins[kin.kin_user_id] = kin;
+                    }
+                });
+            }
+
+            private void loadKinRequestList()
+            {
+                var sql = new Oxide.Core.Database.Sql();
+                sql.Append(SelectKinRequestList, id);
+                sqlite.Query(sql, sqlConnection, results => {
+                    if (results == null) return;
+
+                    foreach (var kinRequest in results)
+                    {
+                        kinRequests.Add((ulong)Convert.ToInt64(kinRequest["user_id"]));
                     }
                 });
             }
@@ -903,6 +971,24 @@ namespace Oxide.Plugins
                     {
                         return "Acquaintance";
                     }
+                }
+            }
+
+            private class Kin
+            {
+                public int id;
+                public int kin_id;
+                public ulong kin_user_id;
+                public string kin_name;
+
+                public void create()
+                {
+
+                }
+
+                public void load(Dictionary<string, object> kin)
+                {
+
                 }
             }
         }
