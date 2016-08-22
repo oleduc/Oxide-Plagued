@@ -481,7 +481,7 @@ namespace Oxide.Plugins
             private const string DeleteAssociation = "DELETE FROM associations WHERE id=@0";
             private const string InsertPlayer = "INSERT OR IGNORE INTO players (user_id, name, plague_level, kin_changes_count, pristine) VALUES (@0, @1,0,0,1);";
             private const string SelectPlayer = "SELECT * FROM players WHERE players.user_id == @0;";
-            private const string UpdatePlayerPlagueLevel = "UPDATE players SET plague_level=@0,pristine=@1 WHERE players.user_id == @3;";
+            private const string UpdatePlayerPlagueLevel = "UPDATE players SET plague_level=@0,pristine=@1 WHERE players.user_id == @2;";
             private const string SelectAssociations = @"
                 SELECT associations.id, associations.player_id, associations.associate_id, associations.level, players.user_id, players.name
                 FROM associations
