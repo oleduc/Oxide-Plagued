@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Plagued", "Wernesgruner", 0.3)]
+    [Info("Plagued", "Wernesgruner", "0.3.2")]
     [Description("Everyone is infected.")]
 
     class Plagued : RustPlugin
@@ -66,7 +66,7 @@ namespace Oxide.Plugins
             playerStates = new Dictionary<ulong, PlayerState>();
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                playerStates.Add(player.userID, new PlayerState(player));
+                playerStates.Add(player.userID, new PlayerState(player, null));
             }
             
             plagueRange = (int) Config["plagueRange"];
@@ -81,16 +81,24 @@ namespace Oxide.Plugins
 
         void OnPlayerInit(BasePlayer player)
         {
-            // Add the proximity detector to the player
-            player.gameObject.AddComponent<ProximityDetector>();
-
             // Add the player to the player state list
             if (!playerStates.ContainsKey(player.userID))
             {
-                // The player was loaded in the current game session
-                playerStates.Add(player.userID, new PlayerState(player));
-                SendReply(player, "Welcome to plagued mod. Try the <color=#81F781>/plagued</color> command for more information.");
-                Puts(player.displayName + " has been plagued!");
+                PlayerState state = new PlayerState(player, stateRef => {
+                    // The player was loaded in the current game session
+                    playerStates.Add(player.userID, stateRef);
+                    SendReply(player, "Welcome to plagued mod. Try the <color=#81F781>/plagued</color> command for more information.");
+                    Puts(player.displayName + " has been plagued!");
+
+                    // Add the proximity detector to the player
+                    player.gameObject.AddComponent<ProximityDetector>();
+
+                    return true;
+                });
+            } else
+            {
+                // Add the proximity detector to the player
+                player.gameObject.AddComponent<ProximityDetector>();
             }
         }
 
@@ -501,7 +509,7 @@ namespace Oxide.Plugins
             /**
              * Retrieves a player from database and restore its store or creates a new database entry
              */
-            public PlayerState(BasePlayer newPlayer)
+            public PlayerState(BasePlayer newPlayer, Func<PlayerState,bool> callback)
             {
                 player = newPlayer;
                 Interface.Oxide.LogInfo("Loading player: " + player.displayName);
@@ -518,6 +526,7 @@ namespace Oxide.Plugins
                     sqlite.Query(sql, sqlConnection, results =>
                     {
                         if (results == null) return;
+
                         if (results.Count > 0)
                         {
                             foreach (var entry in results)
@@ -541,6 +550,7 @@ namespace Oxide.Plugins
                         loadAssociations();
                         loadKinList();
                         //loadKinRequestList();
+                        callback?.Invoke(this);
                     });
                 });
             }
@@ -604,7 +614,7 @@ namespace Oxide.Plugins
                 if (associate == null) return null;
                 if (player.userID == associate.userID) return null;
 
-                Association association;
+                Association association = null;
 
                 if (associations.ContainsKey(associate.userID))
                 {
@@ -613,8 +623,15 @@ namespace Oxide.Plugins
                 }
                 else
                 {
-                    association = createAssociation(associate.userID);
-                    associations.Add(associate.userID, association);
+                    createAssociation(associate.userID, associationRef => {
+                        if (associationRef != null)
+                        {
+                            association = associationRef;
+                            associations.Add(associate.userID, associationRef);
+                        }
+
+                        return true;
+                    });
                 }
 
                 //Interface.Oxide.LogInfo(player.displayName + " -> " + associate.displayName + " = " + associates[associate.userID].ToString());
@@ -892,7 +909,7 @@ namespace Oxide.Plugins
                 return kin;
             }
 
-            private Association createAssociation(ulong associate_user_id)
+            private void createAssociation(ulong associate_user_id, Func<Association, bool> callback)
             {
                 Association association = new Association();
 
@@ -900,6 +917,10 @@ namespace Oxide.Plugins
                 sql.Append(SelectPlayer, associate_user_id);
                 sqlite.Query(sql, sqlConnection, list => {
                     if (list == null) return;
+                    if (list.Count == 0) {
+                        callback(null);
+                        return;
+                    };
 
                     foreach (var user in list)
                     {
@@ -912,9 +933,8 @@ namespace Oxide.Plugins
                     }
 
                     association.create();
+                    callback(association);
                 });
-
-                return association;
             }
 
             private void syncPlagueLevel()
